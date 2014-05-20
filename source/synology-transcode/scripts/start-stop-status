@@ -1,0 +1,15 @@
+#!/bin/bash
+
+case "$1" in
+  status)
+    exit 3
+    ;;
+  start)
+    ;;
+  stop)
+    ;;
+  log)
+    ;;
+  *)
+    ;;
+esac
