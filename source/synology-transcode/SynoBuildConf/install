@@ -2,6 +2,9 @@
 
 . /pkgscripts/include/pkg_util.sh
 
+set +x
+set +e
+
 # SOURCE
 SOURCEDIR="source"
 
@@ -36,16 +39,17 @@ find "${METADIR}"
 
 # INSTALL STUFF
 INSTDIR="/tmp/_install"
-mkdir -p "${INSTDIR}/usr/bin"
 
-for f in synology-transcode ; do
-  if test -f "${f}" ; then
-    cp "${f}" "${INSTDIR}/usr/bin"
-  fi
-done
+tar cvfJ package.txz synology-transcode
+cp package.txz "${INSTDIR}"
 
 echo "FILES"
 echo "====="
+tar tvfJ "${INSTDIR}/package.txz"
+
+
+echo "INSTALLED"
+echo "========="
 find "${INSTDIR}"
 
 # BUILD PACKAGE
