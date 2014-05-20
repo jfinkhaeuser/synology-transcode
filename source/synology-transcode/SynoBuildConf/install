@@ -32,7 +32,7 @@ find "${METADIR}"
 # INSTALL STUFF
 INSTDIR="/tmp/_install"
 
-for f in usr/local/synology-transcode ; do
+for f in usr/local/bin/synology-transcode ; do
   if test -f "${f}" ; then
     mkdir -p "${INSTDIR}/`dirname "${f}"`"
     cp "${f}" "${INSTDIR}/${f}"

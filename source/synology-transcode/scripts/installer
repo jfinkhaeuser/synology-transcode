@@ -45,7 +45,7 @@ postinst ()
     fi
 
     ln -s /var/packages/${PACKAGE}/scripts/start-stop-status ${CTL_FILE}
-    ln -s /var/packages/${PACKAGE}/target/usr/local/synology-transcode ${BIN_FILE}
+    ln -s /var/packages/${PACKAGE}/target/usr/local/bin/synology-transcode ${BIN_FILE}
 
     # Install the application in the main interface.
     if [ -d ${SYNO3APP} ]
