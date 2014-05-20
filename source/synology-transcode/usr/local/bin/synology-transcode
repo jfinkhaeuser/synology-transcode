@@ -191,7 +191,10 @@ for source in SOURCES:
       try:
         tracks = meta['TOTALTRACKS']
       except KeyError:
-        tracks = meta['TRACKTOTAL']
+        try:
+          tracks = meta['TRACKTOTAL']
+        except KeyError:
+          tracks = len(files)
 
       # Run ffmpeg
       cmd = [
