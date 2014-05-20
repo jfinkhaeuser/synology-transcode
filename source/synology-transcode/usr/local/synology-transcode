@@ -1,40 +1,38 @@
 #!/usr/bin/env python3
 
-SOURCES = [
-  '/volume1/music/Organized/Metallica',
-  '/volume1/music/Organized/Opeth',
-  '/volume1/music/Organized/Anathema',
-  '/volume1/music/Organized/Pink Floyd',
-  '/volume1/music/Organized/Dream Theater',
-  '/volume1/music/Organized/Alan Parsons Project, The',
-  '/volume1/music/Organized/Andromeda',
-  '/volume1/music/Organized/Annihilator',
-  '/volume1/music/Organized/Anthrax',
-  '/volume1/music/Organized/A Perfect Circle',
-  '/volume1/music/Organized/Atheist',
-  '/volume1/music/Organized/Bloodbath',
-  '/volume1/music/Organized/Canvas Solaris',
-  '/volume1/music/Organized/Chroma Key',
-  '/volume1/music/Organized/OSI',
-  '/volume1/music/Organized/Coroner',
-  '/volume1/music/Organized/Control Denied',
-  '/volume1/music/Organized/Cynic',
-  '/volume1/music/Organized/Death',
-  '/volume1/music/Organized/Down',
-  '/volume1/music/Organized/Fates Warning',
-  '/volume1/music/Organized/Forbidden',
-  '/volume1/music/Organized',
-]
-TARGET = '/volume1/audio/mp3'
+import configparser, os.path
+parser = configparser.SafeConfigParser()
+parser.read(['.synology-transcode', os.path.expanduser('~/.synology-transcode')])
+
+SOURCES = []
+TARGET = None
 TARGET_EXT = '.mp3'
+INCLUDES = [ '*.flac', '*.wav' ]
+EXCLUDES = [ '@eaDir' ]
+
+import sys
+
+try:
+  SOURCES = [d.strip() for d in parser.get('directories', 'sources').split('\n')]
+  TARGET = parser.get('directories', 'target').strip()
+except (configparser.NoSectionError, configparser.NoOptionError) as ex:
+  sys.stderr.write('Could not read configuration: %s\n' % ex)
+  sys.exit(1)
+
+try:
+  INCLUDES = [p.strip() for p in parser.get('filter', 'includes').split(' ')]
+except (configparser.NoSectionError, configparser.NoOptionError) as ex:
+  pass
+
+try:
+  EXCLUDES = [p.strip() for p in parser.get('filter', 'excludes').split(' ')]
+except (configparser.NoSectionError, configparser.NoOptionError) as ex:
+  pass
 
 import re, fnmatch
 
-includes = [ '*.flac' ]
-includes = r'|'.join([fnmatch.translate(x) for x in includes])
-
-excludes = [ '@eaDir' ]
-excludes = r'|'.join([fnmatch.translate(x) for x in excludes]) or r'$.'
+INCLUDES = r'|'.join([fnmatch.translate(x) for x in INCLUDES])
+EXCLUDES = r'|'.join([fnmatch.translate(x) for x in EXCLUDES]) or r'$.'
 
 def file_hash(fname, block_size = 2**20):
   with open(fname, 'rb') as f:
@@ -121,11 +119,11 @@ for source in SOURCES:
   import os, os.path
   for root, dirs, files in os.walk(source):
     # Filter out unwanted directories
-    dirs[:] = [d for d in dirs if not re.match(excludes, d, re.IGNORECASE)]
+    dirs[:] = [d for d in dirs if not re.match(EXCLUDES, d, re.IGNORECASE)]
 
     # Filter out unwanted files
-    files[:] = [f for f in files if not re.match(excludes, f, re.IGNORECASE)]
-    files[:] = [f for f in files if re.match(includes, f, re.IGNORECASE)]
+    files[:] = [f for f in files if not re.match(EXCLUDES, f, re.IGNORECASE)]
+    files[:] = [f for f in files if re.match(INCLUDES, f, re.IGNORECASE)]
 
     if not files:
       continue
@@ -185,12 +183,16 @@ for source in SOURCES:
         os.makedirs(newdir)
       except OSError as e:
         pass # path exists
-        
+
       # Extract some extra metadata
       meta = get_meta(fullpath)
       track = meta['track']
-      tracks = meta['TOTALTRACKS']
-      
+      tracks = 0
+      try:
+        tracks = meta['TOTALTRACKS']
+      except KeyError:
+        tracks = meta['TRACKTOTAL']
+
       # Run ffmpeg
       cmd = [
         'ffmpeg',
