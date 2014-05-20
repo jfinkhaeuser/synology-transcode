@@ -8,6 +8,19 @@ It's a script. You need to ssh into the box and run it by hand. But it installs
 nicely.
 
 
+Features
+========
+
+- Uses file hashes to detect if a source file has been processed.
+- Can merge multiple source directories; if two source directories contain source
+  files for the same target file, the first one wins.
+- Include only specific source files (pattern matching).
+- Exclude source files or directories (pattern matching).
+- Try to be just a little clever about *really* preserving metadata during
+  transcoding.
+- Output is always `.mp3` in variable bitrate. I'm lazy.
+
+
 Usage
 =====
 
@@ -43,7 +56,7 @@ Nice-To-Haves
 - A user interface
 - A background service
 
-I'm too lazy to build them at this stage.
+I'm too lazy to build them at this stage. Send me pull requests!
 
 
 Releases
@@ -61,7 +74,7 @@ the [ffmpeg](http://www.ffmpeg.org/) project, because, guess what, `ffmpeg` is
 what this script uses under the hood.
 
 So if you have legal claim to either, drop me a line. I've no interest in
-infringing, this is just a lazy side project for me.
+infringing, this is just a side project for me. Did I mention I'm lazy?
 
 
 Build
