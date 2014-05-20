@@ -58,3 +58,4 @@ docs/_build/
 # Synology
 pkgscripts
 build_env
+result_spk/*.bad.*
