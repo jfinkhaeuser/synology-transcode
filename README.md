@@ -39,7 +39,13 @@ Nice-To-Haves
 - A user interface
 - A background service
 
-I'm too lazy to build them at this stage
+I'm too lazy to build them at this stage.
+
+
+Releases
+========
+
+Find them in the `result_spk` directory.
 
 
 Build
