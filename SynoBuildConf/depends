@@ -1,0 +1,6 @@
+[BuildDependent]
+
+[ReferenceOnly]
+
+[default]
+all="5.0"

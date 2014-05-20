@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+
+SOURCES = [
+  '/volume1/music/Organized/Metallica',
+  '/volume1/music/Organized/Opeth',
+  '/volume1/music/Organized/Anathema',
+  '/volume1/music/Organized/Pink Floyd',
+  '/volume1/music/Organized/Dream Theater',
+  '/volume1/music/Organized/Alan Parsons Project, The',
+  '/volume1/music/Organized/Andromeda',
+  '/volume1/music/Organized/Annihilator',
+  '/volume1/music/Organized/Anthrax',
+  '/volume1/music/Organized/A Perfect Circle',
+  '/volume1/music/Organized/Atheist',
+  '/volume1/music/Organized/Bloodbath',
+  '/volume1/music/Organized/Canvas Solaris',
+  '/volume1/music/Organized/Chroma Key',
+  '/volume1/music/Organized/OSI',
+  '/volume1/music/Organized/Coroner',
+  '/volume1/music/Organized/Control Denied',
+  '/volume1/music/Organized/Cynic',
+  '/volume1/music/Organized/Death',
+  '/volume1/music/Organized/Down',
+  '/volume1/music/Organized/Fates Warning',
+  '/volume1/music/Organized/Forbidden',
+  '/volume1/music/Organized',
+]
+TARGET = '/volume1/audio/mp3'
+TARGET_EXT = '.mp3'
+
+import re, fnmatch
+
+includes = [ '*.flac' ]
+includes = r'|'.join([fnmatch.translate(x) for x in includes])
+
+excludes = [ '@eaDir' ]
+excludes = r'|'.join([fnmatch.translate(x) for x in excludes]) or r'$.'
+
+def file_hash(fname, block_size = 2**20):
+  with open(fname, 'rb') as f:
+    import hashlib
+    sha256 = hashlib.sha256()
+    while True:
+      data = f.read(block_size)
+      if not data:
+        break
+      sha256.update(data)
+    return sha256.hexdigest()
+
+
+def read_hashes(path):
+  import os.path
+  hashname = os.path.join(path, '.hashes')
+  hashes = {}
+  import csv  
+  converted = False
+  try:  
+    with open(hashname, 'rt', encoding='utf8') as hashfile:  
+      reader = csv.reader(hashfile)
+      for row in reader:
+        if len(row) > 2:
+          hashes[row[0]] = (row[1], row[2])
+        else:
+          if row[1].startswith('('):
+            # Workaround for messed up hash files
+            tmp = row[1].strip('()').split(',') 
+            tmp = [t.strip('\'" ') for t in tmp]
+            hashes[row[0]] = tuple(tmp)
+            converted = True
+          else:
+            hashes[row[0]] = (row[1], None)
+  except IOError as e:
+    pass # no hash file/no hashes
+    
+  return hashes, converted
+  
+  
+def write_hashes(path, hashes):
+  import os.path
+  hashname = os.path.join(path, '.hashes')
+  import csv  
+  try:
+    with open(hashname, 'wt', encoding='utf8') as hashfile:
+      writer = csv.writer(hashfile)
+      for row in hashes.items():
+        towrite = [row[0]] + list(row[1])
+        writer.writerow(towrite)
+      hashfile.close()
+  except IOError as e:
+    print('ERROR', e)
+    
+    
+def get_meta(fname):
+  import subprocess
+  
+  cmd = [
+    'ffmpeg',
+    '-i',
+    fname,
+    '-y',
+    '-f',
+    'ffmetadata',
+    '/tmp/transcode-meta',
+  ]
+  ret = subprocess.call(cmd)
+  print('ret', ret)
+  if ret != 0:
+    return {}
+  
+  meta = {}
+  with open('/tmp/transcode-meta', 'rt', encoding='utf8') as metafile:
+    for row in metafile.readlines():
+      row = row.split('=')
+      if len(row) < 2:
+      	continue
+      meta[row[0]] = row[1].strip('\n') 
+  return meta
+  
+  
+for source in SOURCES:
+  import os, os.path
+  for root, dirs, files in os.walk(source):
+    # Filter out unwanted directories
+    dirs[:] = [d for d in dirs if not re.match(excludes, d, re.IGNORECASE)]
+
+    # Filter out unwanted files
+    files[:] = [f for f in files if not re.match(excludes, f, re.IGNORECASE)]
+    files[:] = [f for f in files if re.match(includes, f, re.IGNORECASE)]
+
+    if not files:
+      continue
+    
+    dirs.sort()
+    files.sort()
+
+    # Split root to get Artist, Album
+    base, album = os.path.split(root)
+    base, artist = os.path.split(base)
+
+    # Target directory
+    newdir = os.path.join(TARGET, artist, album)
+
+    # Try to read hashes of source files. We consider a file processed if it's
+    # hash is recorded here and hasn't changed.
+    hashes, converted = read_hashes(newdir)
+    if converted:
+      write_hashes(newdir, hashes)
+
+    # Process files
+    for fname in files:
+      basename, ext = os.path.splitext(fname)
+
+      fullpath = os.path.join(base, artist, album, fname)
+      newfname = os.path.join(newdir, basename) + TARGET_EXT
+
+      newhash = file_hash(fullpath)
+    
+      print(fullpath, '->', newfname)
+    
+      # Old hashes
+      if fname in hashes:
+        # File was processed, let's leave it at that
+        if hashes[fname][0] == newhash:
+          print(' -> updating to new style hash')
+          del(hashes[fname])
+          hashes[basename] = (newhash, fname)
+          write_hashes(newdir, hashes)
+          continue
+      
+      # New hashes
+      if basename in hashes:
+        if hashes[basename][0] == newhash:
+          print(' -> source already processed, skipping')
+          continue
+        elif hashes[basename[1]] == fname:
+          print(' -> source updated, processing')
+        else:
+          print(' -> target exists from other source, skipping')
+          continue
+      else:
+        print(' -> processing')
+
+      # Create directory
+      try:
+        os.makedirs(newdir)
+      except OSError as e:
+        pass # path exists
+        
+      # Extract some extra metadata
+      meta = get_meta(fullpath)
+      track = meta['track']
+      tracks = meta['TOTALTRACKS']
+      
+      # Run ffmpeg
+      cmd = [
+        'ffmpeg',
+        '-y',
+        '-i',
+        fullpath,
+        '-acodec',
+        'libmp3lame',
+        '-aq',
+        '0',
+        '-map_metadata',
+        '0',
+        '-id3v2_version',
+        '3',
+        '-metadata',
+        'track=%s/%s' % (track, tracks),
+        newfname
+      ]
+      
+      import subprocess
+      ret = subprocess.call(cmd)
+      if 0 == ret:
+        hashes[basename] = (newhash, fname)
+        write_hashes(newdir, hashes)
+
