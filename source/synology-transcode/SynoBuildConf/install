@@ -10,25 +10,17 @@ SOURCEDIR="source"
 
 # META
 METADIR="/tmp/_pkg"
-mkdir -p "${METADIR}"
-mkdir -p "${METADIR}/conf"
-mkdir -p "${METADIR}/scripts"
 
-for f in INFO LICENSE PACKAGE_ICON*.PNG ; do
+for f in INFO LICENSE PACKAGE_ICON*.PNG conf/PKG_DEPS scripts/* ; do
   if test -f "${f}" ; then
-    cp "${f}" "${METADIR}"
-  fi
-done
-
-for f in conf/PKG_DEPS ; do
-  if test -f "${f}" ; then
-    cp "${f}" "${METADIR}/conf"
+    mkdir -p "${METADIR}/`dirname "${f}"`"
+    cp "${f}" "${METADIR}/${f}"
   fi
 done
 
 for f in scripts/* ; do
   if test -f "${f}" ; then
-    cp "${f}" "${METADIR}/scripts"
+    cp "${f}" "${METADIR}/${f}"
   fi
 done
 
@@ -40,16 +32,15 @@ find "${METADIR}"
 # INSTALL STUFF
 INSTDIR="/tmp/_install"
 
-tar cvfJ package.txz synology-transcode
-cp package.txz "${INSTDIR}"
+for f in usr/local/synology-transcode ; do
+  if test -f "${f}" ; then
+    mkdir -p "${INSTDIR}/`dirname "${f}"`"
+    cp "${f}" "${INSTDIR}/${f}"
+  fi
+done
 
 echo "FILES"
 echo "====="
-tar tvfJ "${INSTDIR}/package.txz"
-
-
-echo "INSTALLED"
-echo "========="
 find "${INSTDIR}"
 
 # BUILD PACKAGE
