@@ -2,15 +2,29 @@
 
 . /pkgscripts/include/pkg_util.sh
 
+# SOURCE
+SOURCEDIR="source"
+
 # META
 METADIR="/tmp/_pkg"
 mkdir -p "${METADIR}"
+mkdir -p "${METADIR}/conf"
 
 for f in INFO LICENSE PACKAGE_ICON*.PNG ; do
   if test -f "${f}" ; then
     cp "${f}" "${METADIR}"
   fi
 done
+
+for f in conf/PKG_DEPS ; do
+  if test -f "${f}" ; then
+    cp "${f}" "${METADIR}/conf"
+  fi
+done
+
+echo "METADATA"
+echo "========"
+find "${METADIR}"
 
 # INSTALL STUFF
 INSTDIR="/tmp/_install"
@@ -22,6 +36,12 @@ for f in synology-transcode ; do
   fi
 done
 
+echo "FILES"
+echo "====="
+find "${INSTDIR}"
+
 # BUILD PACKAGE
-pkg_make_package /tmp/_install /tmp/_pkg
-pkg_make_spk /tmp/_pkg /image/packages
+pkg_make_package "${INSTDIR}" "${METADIR}"
+
+mkdir -p /image/packages
+pkg_make_spk "${METADIR}" /image/packages

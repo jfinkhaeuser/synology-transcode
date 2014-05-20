@@ -1,4 +1,5 @@
-package="Synology Transcode"
+package="synology-transcode"
+displayname="Synology Transcode"
 version="0.1"
 description="Transcode high quality audio files automatically to mp3"
 support_url="https://github.com/jfinkhaeuser/synology-transcode"
