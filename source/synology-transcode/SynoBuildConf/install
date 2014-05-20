@@ -9,6 +9,7 @@ SOURCEDIR="source"
 METADIR="/tmp/_pkg"
 mkdir -p "${METADIR}"
 mkdir -p "${METADIR}/conf"
+mkdir -p "${METADIR}/scripts"
 
 for f in INFO LICENSE PACKAGE_ICON*.PNG ; do
   if test -f "${f}" ; then
@@ -21,6 +22,13 @@ for f in conf/PKG_DEPS ; do
     cp "${f}" "${METADIR}/conf"
   fi
 done
+
+for f in scripts/* ; do
+  if test -f "${f}" ; then
+    cp "${f}" "${METADIR}/scripts"
+  fi
+done
+
 
 echo "METADATA"
 echo "========"
