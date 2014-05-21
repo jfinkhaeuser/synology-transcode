@@ -25,7 +25,23 @@ SYNO3APP="/usr/syno/synoman/webman/3rdparty"
 
 preinst ()
 {
-    exit 0
+  # Need pip
+  if which pip >/dev/null ; then
+    true
+  else
+    # need to install pip
+    wget https://bootstrap.pypa.io/get-pip.py && \
+      python2 get-pip.py && \
+      rm get-pip.py
+  fi
+
+  # Update pip. Why not?
+  pip install -U pip
+
+  # Install packages
+  pip install watchdog
+
+  exit 0
 }
 
 postinst ()
