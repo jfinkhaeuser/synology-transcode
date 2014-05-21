@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2.7
 
-import configparser, os.path
-parser = configparser.SafeConfigParser()
+import ConfigParser, os.path
+parser = ConfigParser.SafeConfigParser()
 parser.read(['.synology-transcode', os.path.expanduser('~/.synology-transcode')])
 
 SOURCES = []
@@ -15,18 +15,18 @@ import sys
 try:
   SOURCES = [d.strip() for d in parser.get('directories', 'sources').split('\n')]
   TARGET = parser.get('directories', 'target').strip()
-except (configparser.NoSectionError, configparser.NoOptionError) as ex:
+except (ConfigParser.NoSectionError, ConfigParser.NoOptionError) as ex:
   sys.stderr.write('Could not read configuration: %s\n' % ex)
   sys.exit(1)
 
 try:
   INCLUDES = [p.strip() for p in parser.get('filter', 'includes').split(' ')]
-except (configparser.NoSectionError, configparser.NoOptionError) as ex:
+except (ConfigParser.NoSectionError, ConfigParser.NoOptionError) as ex:
   pass
 
 try:
   EXCLUDES = [p.strip() for p in parser.get('filter', 'excludes').split(' ')]
-except (configparser.NoSectionError, configparser.NoOptionError) as ex:
+except (ConfigParser.NoSectionError, ConfigParser.NoOptionError) as ex:
   pass
 
 import re, fnmatch
@@ -50,10 +50,10 @@ def read_hashes(path):
   import os.path
   hashname = os.path.join(path, '.hashes')
   hashes = {}
-  import csv  
+  import csv
   converted = False
-  try:  
-    with open(hashname, 'rt', encoding='utf8') as hashfile:  
+  try:
+    with open(hashname, 'rt') as hashfile:
       reader = csv.reader(hashfile)
       for row in reader:
         if len(row) > 2:
@@ -61,7 +61,7 @@ def read_hashes(path):
         else:
           if row[1].startswith('('):
             # Workaround for messed up hash files
-            tmp = row[1].strip('()').split(',') 
+            tmp = row[1].strip('()').split(',')
             tmp = [t.strip('\'" ') for t in tmp]
             hashes[row[0]] = tuple(tmp)
             converted = True
@@ -69,16 +69,16 @@ def read_hashes(path):
             hashes[row[0]] = (row[1], None)
   except IOError as e:
     pass # no hash file/no hashes
-    
+
   return hashes, converted
-  
-  
+
+
 def write_hashes(path, hashes):
   import os.path
   hashname = os.path.join(path, '.hashes')
-  import csv  
+  import csv
   try:
-    with open(hashname, 'wt', encoding='utf8') as hashfile:
+    with open(hashname, 'wt') as hashfile:
       writer = csv.writer(hashfile)
       for row in hashes.items():
         towrite = [row[0]] + list(row[1])
@@ -86,11 +86,11 @@ def write_hashes(path, hashes):
       hashfile.close()
   except IOError as e:
     print('ERROR', e)
-    
-    
+
+
 def get_meta(fname):
   import subprocess
-  
+
   cmd = [
     'ffmpeg',
     '-i',
@@ -104,17 +104,17 @@ def get_meta(fname):
   print('ret', ret)
   if ret != 0:
     return {}
-  
+
   meta = {}
-  with open('/tmp/transcode-meta', 'rt', encoding='utf8') as metafile:
+  with open('/tmp/transcode-meta', 'rt') as metafile:
     for row in metafile.readlines():
       row = row.split('=')
       if len(row) < 2:
       	continue
-      meta[row[0]] = row[1].strip('\n') 
+      meta[row[0]] = row[1].strip('\n')
   return meta
-  
-  
+
+
 for source in SOURCES:
   import os, os.path
   for root, dirs, files in os.walk(source):
@@ -127,7 +127,7 @@ for source in SOURCES:
 
     if not files:
       continue
-    
+
     dirs.sort()
     files.sort()
 
@@ -152,9 +152,9 @@ for source in SOURCES:
       newfname = os.path.join(newdir, basename) + TARGET_EXT
 
       newhash = file_hash(fullpath)
-    
+
       print(fullpath, '->', newfname)
-    
+
       # Old hashes
       if fname in hashes:
         # File was processed, let's leave it at that
@@ -164,7 +164,7 @@ for source in SOURCES:
           hashes[basename] = (newhash, fname)
           write_hashes(newdir, hashes)
           continue
-      
+
       # New hashes
       if basename in hashes:
         if hashes[basename][0] == newhash:
@@ -214,7 +214,7 @@ for source in SOURCES:
         'track=%s/%s' % (track, tracks),
         newfname
       ]
-      
+
       import subprocess
       ret = subprocess.call(cmd)
       if 0 == ret:

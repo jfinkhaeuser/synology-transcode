@@ -1,1 +1,2 @@
-[py3k]
+[Python]
+pkg_min_ver = 2.7.0
