@@ -57,35 +57,105 @@ def write_hashes(path, hashes):
         writer.writerow(towrite)
       hashfile.close()
   except IOError as e:
-    print('ERROR', e)
+    return False
+  return True
 
 
-def get_meta(fname):
+def normalize_meta(meta, files):
+  """Given metadata from e.g. get_meta(), normalizes it - that is, it tries to
+     detect which non-ID3v2.3 items are given and to convert them to ID3v2.3
+     items if possible."""
+  if 'track' in meta:
+    track = meta['track']
+    if track.find('/') < 0:
+      track = int(track)
+      total = 0
+      try:
+        total = meta['TOTALTRACKS']
+      except KeyError:
+        try:
+          total = meta['TRACKTOTAL']
+        except KeyError:
+          total = len(files)
+      meta['track'] = '%s/%s' % (track, total)
+
+  return meta
+
+
+def match_meta_pattern(meta, fname, pattern):
+  """Tries to parse the given file name according to the given pattern, and
+     provides the results in the meta dict."""
+  # Ensure that the @(extension) is used correctly.
+  if pattern.find('@(extension)') > 0 and not pattern.endswith('@(extension)'):
+    raise RuntimeError('@(extension) may only appear at the end of file name patterns.')
+
+  # First split the pattern into the number of components we need to recognize
+  # independently.
+  import re
+  components = pattern.split('/')
+
+  # Process components back to front; that way, if a component doesn't match,
+  # we can still provide partial results
+  known = [ 'artist', 'year', 'album', 'track', 'title' ]
+  remainder = fname[:]
+  while len(components):
+    comp = components.pop()
+
+    # Grab the last part of the filename, that's what we check this
+    # component against.
+    import os.path
+    remainder, tail = os.path.split(remainder)
+
+    # Try to match the current component against the file name's last part.
+    import re
+    res = re.search(comp, tail)
+    if not res:
+      break # no match, stop processing
+    res = res.groupdict()
+
+    # Add results to meta
+    for key in known:
+      if key in res and (key not in meta or not meta[key]):
+        meta[key] = res[key]
+
+  return meta
+
+
+def get_meta(fname, pattern = None):
   """Extract audio metadata from the named file."""
-  import subprocess
+  import subprocess, tempfile
 
-  cmd = [
-    'ffmpeg',
-    '-i',
-    fname,
-    '-y',
-    '-f',
-    'ffmetadata',
-    '/tmp/transcode-meta',
-  ]
-  ret = subprocess.call(cmd)
-  print('ret', ret)
-  if ret != 0:
-    return {}
-
+  # Metadata from file name
   meta = {}
-  with open('/tmp/transcode-meta', 'rt') as metafile:
+  if pattern:
+    meta = match_meta_pattern(meta, fname, pattern)
+
+  # Try to extract metadata. It may fail
+  with tempfile.NamedTemporaryFile(mode = 'rt') as metafile:
+    cmd = [
+      'ffmpeg',
+      '-i',
+      fname,
+      '-y',
+      '-f',
+      'ffmetadata',
+      metafile.name,
+    ]
+    try:
+      subprocess.check_output(cmd, stderr = subprocess.STDOUT)
+    except subprocess.CalledProcessError as ex:
+      return meta
+
     for row in metafile.readlines():
       row = row.split('=')
       if len(row) < 2:
         continue
-      meta[row[0]] = row[1].strip('\n')
+      value = row[1].strip('\n')
+      if value:
+        meta[row[0]] = value
+
   return meta
+
 
 
 
@@ -93,6 +163,11 @@ def get_meta(fname):
 # File processing
 def process(options):
   print options
+  print normalize_meta(get_meta('01 - Lovelorn Rhapsody.mp3', options['metadata']), [])
+  print normalize_meta(get_meta('01 - Lovelorn Rhapsody.wav', options['metadata']), [])
+  print normalize_meta(get_meta('2003 - some album/01 - Lovelorn Rhapsody.wav', options['metadata']), [])
+  print normalize_meta(get_meta('artist/2003 - some album/01 - Lovelorn Rhapsody.wav', options['metadata']), [])
+  print normalize_meta(get_meta('/some/prefix/artist/2003 - some album/01 - Lovelorn Rhapsody.wav', options['metadata']), [])
 
 ##############################################################################
 # Main entry point
@@ -162,18 +237,26 @@ sub directory tree.
     'sources': ('directories', 'sources'),
     'include': ('filters', 'include'),
     'exclude': ('filters', 'exclude'),
+    'metadata': ('filters', 'metadata', False),
   }
   options = DEFAULTS
-  for key, path in mapping.items():
-    if parser.has_section(path[0]) and parser.has_option(path[0], path[1]):
-      import re
-      values = re.findall(r'(?:"[^"]*"|[^\s"])+', parser.get(path[0], path[1]))
-      def unquote(item):
-        if item.startswith('"') and item.endswith('"'):
-          return item.strip('"')
-        return item
-      values = map(unquote, values)
-      options[key] = values
+  for key, source in mapping.items():
+    if parser.has_section(source[0]) and parser.has_option(source[0], source[1]):
+      value = parser.get(source[0], source[1])
+      if len(source) > 2 and not source[2]:
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+          value = value.strip('"')
+        options[key] = value
+      else:
+        import re
+        values = re.findall(r'(?:"[^"]*"|[^\s"])+', value)
+        def unquote(item):
+          if item.startswith('"') and item.endswith('"'):
+            return item.strip('"')
+          return item
+        values = map(unquote, values)
+        options[key] = values
 
   # Now merge command line arguments, they override the config file
   # options
