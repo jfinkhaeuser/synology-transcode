@@ -1,0 +1,96 @@
+#!/usr/bin/env python2.7
+
+
+def process(options):
+  print options
+
+
+def main():
+  DEFAULTS = {
+    'include': ['*.flac', '*.wav'],
+    'exclude': ['@eaDir'],
+  }
+
+  import argparse
+  parser = argparse.ArgumentParser(
+      description = 'Transcode high quality audio files automatically to mp3',
+      epilog = """Include and exclude patterns are shell style patterns. See
+the shell documentation or the Python `fnmatch` module documentation for
+details.
+
+Processing is limited to files that are in the source directories, are matched
+by one of the include patterns, and are not matched by one of the exclude
+patterns.
+
+Include patterns are applied to the full file path name, but exclude patterns
+are also applied to full directory path names, to more easily exclude an entire
+sub directory tree.
+"""
+  )
+
+  parser.add_argument('destination', metavar = 'DST', type = str, nargs = 1,
+      help = 'Directory in which to store processed files.')
+  parser.add_argument('sources', metavar = 'SRC', type = str, nargs = '+',
+      help = 'Directory with source files.')
+
+  parser.add_argument('-c', '--config', metavar = 'FILE', type = str,
+      default = '/etc/transcode.cfg',
+      help = 'Location of the configuration file. Defaults to `/etc/transcode.cfg`.')
+
+  parser.add_argument('-i', '--include', metavar = 'PATTERN', type = str,
+      action = 'append',
+      help = 'Include patterns for source filenames to process. Defaults to `*.flac` and `*.wav`.')
+  parser.add_argument('-e', '--exclude', metavar = 'PATTERN', type = str,
+      action = 'append',
+      help = 'Exclude patterns for source filenames or directories. Defaults to `@eaDir` for directories.')
+
+  parser.add_argument('-w', '--watch', action = 'store_const', const = True,
+      default = False,
+      help = 'Instead of processing the source directories once and exiting, keep running and watch them for file additions and changes to process.')
+
+
+  parser.add_argument('--version', action = 'version', version = '%(prog)s 0.2')
+
+  args = vars(parser.parse_args())
+  for k, v in args.items():
+    if v is None:
+      del(args[k])
+
+  # Try processing config file, if it exists.
+  import ConfigParser
+  parser = ConfigParser.SafeConfigParser()
+  try:
+    parser.read(args['config'])
+  except ConfigParser.ParsingError as err:
+    import sys
+    sys.stderr.write('ERROR %s\n' % err)
+    sys.exit(1)
+
+  mapping = {
+    'destination': ('directories', 'destination'),
+    'sources': ('directories', 'sources'),
+    'include': ('filters', 'include'),
+    'exclude': ('filters', 'exclude'),
+  }
+  options = DEFAULTS
+  for key, path in mapping.items():
+    if parser.has_section(path[0]) and parser.has_option(path[0], path[1]):
+      import re
+      values = re.findall(r'(?:"[^"]*"|[^\s"])+', parser.get(path[0], path[1]))
+      def unquote(item):
+        if item.startswith('"') and item.endswith('"'):
+          return item.strip('"')
+        return item
+      values = map(unquote, values)
+      options[key] = values
+
+  # Now merge command line arguments, they override the config file
+  # options
+  options.update(args);
+
+  # Let's do this thing!
+  process(options)
+
+
+if '__main__' == __name__:
+  main()
