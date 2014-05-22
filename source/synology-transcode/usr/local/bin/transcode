@@ -175,6 +175,7 @@ def main():
   DEFAULTS = {
     'include': ['*.flac', '*.wav'],
     'exclude': ['@eaDir'],
+    'metadata': r'(?P<artist>.+)/(?P<year>[^- ]+) *- *(?P<album>.+)/(?P<track>[^- ]+) *- *(?P<title>.+)\..*',
   }
 
   import argparse
