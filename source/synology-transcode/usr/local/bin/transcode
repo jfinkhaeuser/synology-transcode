@@ -1,10 +1,101 @@
 #!/usr/bin/env python2.7
 
+##############################################################################
+# Helper functions
+def file_hash(fname, block_size = 2**20):
+  """Given the file name, returns a SHA-256 hash over the file contents"""
+  with open(fname, 'rb') as f:
+    import hashlib
+    sha256 = hashlib.sha256()
+    while True:
+      data = f.read(block_size)
+      if not data:
+        break
+      sha256.update(data)
+    return sha256.hexdigest()
 
+
+def read_hashes(path):
+  """Reads file hashes from a .hashes file in the given directory and returns
+     them."""
+  import os.path
+  hashname = os.path.join(path, '.hashes')
+  hashes = {}
+  import csv
+  converted = False
+  try:
+    with open(hashname, 'rt') as hashfile:
+      reader = csv.reader(hashfile)
+      for row in reader:
+        if len(row) > 2:
+          hashes[row[0]] = (row[1], row[2])
+        else:
+          if row[1].startswith('('):
+            # Workaround for messed up hash files
+            tmp = row[1].strip('()').split(',')
+            tmp = [t.strip('\'" ') for t in tmp]
+            hashes[row[0]] = tuple(tmp)
+            converted = True
+          else:
+            hashes[row[0]] = (row[1], None)
+  except IOError as e:
+    pass # no hash file/no hashes
+
+  return hashes, converted
+
+
+def write_hashes(path, hashes):
+  """Writes file hashes to a .hashes file in the given directory."""
+  import os.path
+  hashname = os.path.join(path, '.hashes')
+  import csv
+  try:
+    with open(hashname, 'wt') as hashfile:
+      writer = csv.writer(hashfile)
+      for row in hashes.items():
+        towrite = [row[0]] + list(row[1])
+        writer.writerow(towrite)
+      hashfile.close()
+  except IOError as e:
+    print('ERROR', e)
+
+
+def get_meta(fname):
+  """Extract audio metadata from the named file."""
+  import subprocess
+
+  cmd = [
+    'ffmpeg',
+    '-i',
+    fname,
+    '-y',
+    '-f',
+    'ffmetadata',
+    '/tmp/transcode-meta',
+  ]
+  ret = subprocess.call(cmd)
+  print('ret', ret)
+  if ret != 0:
+    return {}
+
+  meta = {}
+  with open('/tmp/transcode-meta', 'rt') as metafile:
+    for row in metafile.readlines():
+      row = row.split('=')
+      if len(row) < 2:
+        continue
+      meta[row[0]] = row[1].strip('\n')
+  return meta
+
+
+
+##############################################################################
+# File processing
 def process(options):
   print options
 
-
+##############################################################################
+# Main entry point
 def main():
   DEFAULTS = {
     'include': ['*.flac', '*.wav'],
@@ -87,6 +178,11 @@ sub directory tree.
   # Now merge command line arguments, they override the config file
   # options
   options.update(args);
+
+  # Make the include/exclude patterns useful
+  import re, fnmatch
+  options['include'] = r'|'.join([fnmatch.translate(x) for x in options['include']])
+  options['exclude'] = r'|'.join([fnmatch.translate(x) for x in options['exclude']]) or r'$.'
 
   # Let's do this thing!
   process(options)
