@@ -1,6 +1,18 @@
 #!/usr/bin/env python2.7
 
 ##############################################################################
+# Global constants
+
+# Tags we process
+KNOWN_TAGS = [
+  'artist',
+  'year',
+  'album',
+  'track',
+  'title'
+]
+
+##############################################################################
 # Helper functions
 def file_hash(fname, block_size = 2**20):
   """Given the file name, returns a SHA-256 hash over the file contents"""
@@ -61,7 +73,7 @@ def write_hashes(path, hashes):
   return True
 
 
-def normalize_meta(meta, files):
+def normalize_meta(meta):
   """Given metadata from e.g. get_meta(), normalizes it - that is, it tries to
      detect which non-ID3v2.3 items are given and to convert them to ID3v2.3
      items if possible."""
@@ -71,13 +83,21 @@ def normalize_meta(meta, files):
       track = int(track)
       total = 0
       try:
-        total = meta['TOTALTRACKS']
+        total = int(meta['TOTALTRACKS'])
       except KeyError:
         try:
-          total = meta['TRACKTOTAL']
+          total = int(meta['TRACKTOTAL'])
         except KeyError:
-          total = len(files)
-      meta['track'] = '%s/%s' % (track, total)
+          pass
+      if total:
+        meta['track'] = '%02d/%02d' % (track, total)
+      else:
+        meta['track'] = '%02d' % track
+    else:
+      meta['track'] = '%02d' % int(track)
+
+  if 'disc' not in meta:
+    meta['disc'] = '1' # most often the case
 
   return meta
 
@@ -85,10 +105,6 @@ def normalize_meta(meta, files):
 def match_meta_pattern(meta, fname, pattern):
   """Tries to parse the given file name according to the given pattern, and
      provides the results in the meta dict."""
-  # Ensure that the @(extension) is used correctly.
-  if pattern.find('@(extension)') > 0 and not pattern.endswith('@(extension)'):
-    raise RuntimeError('@(extension) may only appear at the end of file name patterns.')
-
   # First split the pattern into the number of components we need to recognize
   # independently.
   import re
@@ -96,7 +112,6 @@ def match_meta_pattern(meta, fname, pattern):
 
   # Process components back to front; that way, if a component doesn't match,
   # we can still provide partial results
-  known = [ 'artist', 'year', 'album', 'track', 'title' ]
   remainder = fname[:]
   while len(components):
     comp = components.pop()
@@ -114,7 +129,7 @@ def match_meta_pattern(meta, fname, pattern):
     res = res.groupdict()
 
     # Add results to meta
-    for key in known:
+    for key in KNOWN_TAGS:
       if key in res and (key not in meta or not meta[key]):
         meta[key] = res[key]
 
@@ -157,17 +172,251 @@ def get_meta(fname, pattern = None):
   return meta
 
 
+def process_file(source_full, options):
+  """Actual work performed on each item in the worker queue happens here."""
+  import os.path
+  source_base, source_name = os.path.split(source_full)
+  basename, ext = os.path.splitext(source_name)
+
+  # First we gather some metadata on the source file. This is necessary amongst
+  # other things to ensure we find a good target path.
+  meta = normalize_meta(get_meta(source_full, options['metadata']))
+
+  # Next, we can establish the last components of the target file name.
+  target_pattern = options['target_pattern'] % meta
+  target_base, target_name = os.path.split(target_pattern)
+  target_base = os.path.join(options['destination'], target_base)
+  target_full = os.path.join(target_base, target_name)
+
+  # Try to read hashes from the target_base
+  hashes, converted = read_hashes(target_base)
+  if converted:
+    write_hashes(target_base, hashes)
+
+  # Generate a hash of the given file. We need this to check against the
+  # hashes we may just have read
+  newhash = file_hash(source_full)
+
+  # If the target doesn't exist, we obviously need to process, hashes or no
+  # hashes.
+  if os.path.exists(target_full):
+    # Check for the name, in case it's an old hash format
+    if source_name in hashes:
+      if hashes[source_name][0] == newhash:
+        # File was processed, but update to new style hash
+        del(hashes[source_name])
+        hashes[basename] = (newhash, source_full)
+        write_hashes(target_base, hashes)
+        return
+
+    # New hashes
+    if basename in hashes:
+      if hashes[basename][0] == newhash:
+        # Already processed, skipping
+        return
+      elif hashes[basename][1] == source_full:
+        # Source updated
+        pass
+      else:
+        # Exists from other source, skipping
+        return
+    else:
+      # New file, processing
+      pass
+
+  # Create target directory
+  import os
+  try:
+    os.makedirs(target_base)
+  except OSError as e:
+    pass # path exists
+
+  # Convert!
+  cmd = [
+    'ffmpeg',
+    '-y',
+    '-i',
+    source_full,
+    '-acodec',
+    'libmp3lame',
+    '-aq',
+    '0',
+    '-map_metadata',
+    '0',
+    '-id3v2_version',
+    '3',
+  ]
+  for key in KNOWN_TAGS:
+    if key in meta:
+      cmd += [ '-metadata', '%s=%s' % (key, meta[key]) ]
+  cmd += [ target_full ]
+
+  import subprocess
+  out = None
+  try:
+    print 'Processing "%s" to "%s"...' % (source_full, target_full)
+    # print cmd
+    out = subprocess.check_output(cmd, stderr = subprocess.STDOUT)
+    hashes[basename] = (newhash, source_full)
+    write_hashes(target_base, hashes)
+    print '-> done'
+  except subprocess.CalledProcessError as ex:
+    print '-> ERROR: ', ex
+
+
+
+class ExitEvent(object):
+  pass
+
+class FileEvent(object):
+  def __init__(self, fname):
+    self.fname = fname
+
+
+class Worker(object):
+  """Loop over the queue and try to process each file in it."""
+  def __init__(self, options, queue, condition):
+    self.options = options
+    self.queue = queue
+    self.condition = condition
+
+  def signal_end(self):
+    self.condition.acquire()
+    self.condition.notify()
+    self.condition.release()
+
+  def __call__(self):
+    try:
+      while True:
+        event = self.queue.get()
+
+        if isinstance(event, ExitEvent):
+          self.queue.task_done()
+          self.signal_end()
+          return
+
+        # Always FileEvent
+        process_file(event.fname, self.options)
+        self.queue.task_done()
+    except Exception as err:
+      import sys
+      sys.stderr.write('ERROR in worker: %s\n' % err)
+      sys.stderr.flush()
+
+      self.signal_end()
+      return
 
 
 ##############################################################################
 # File processing
+def monitor(queue, options):
+  """Watch all source directories for changes, adding each file that matches
+     to the queue."""
+  from watchdog.observers import Observer
+  from watchdog.events import FileSystemEventHandler
+
+  class MonitorHandler(FileSystemEventHandler):
+    def __init__(self, **kw):
+      super(MonitorHandler, self).__init__()
+
+    def on_modified(self, event):
+      self.try_schedule(event.src_path)
+
+    def on_moved(self, event):
+      # TODO We can be more clever about it, by moving the already processed file.
+      # but whatever, the point isn't to mirror the source(s) exactly, it's to
+      # provide mp3 versions of them.
+      self.try_schedule(event.dest_path)
+
+    def try_schedule(self, path):
+      import re
+      if re.match(options['exclude'], path):
+        return
+      if not re.match(options['include'], path):
+        return
+      queue.put(FileEvent(path))
+
+
+  handler = MonitorHandler(regexes = options['include'],
+      ignore_regexes = options['exclude'])
+
+  observer = Observer()
+
+  for source in options['sources']:
+    import os.path
+    if os.path.isdir(source):
+      observer.schedule(handler, source, recursive = True)
+    else:
+      import sys
+      sys.stderr.write('WARNING: skipping "%s", not a directory.\n' % source)
+
+  observer.start()
+
+
+def run_once(queue, options):
+  """Run through the source directories once, adding each file that matches
+     to the queue."""
+  for source in options['sources']:
+    import os, os.path
+    for root, dirs, files in os.walk(source):
+      # Filter dirs, files, so we don't even bother to process further
+      import re
+      dirs[:] = [d for d in dirs if not re.match(options['exclude'], d, re.IGNORECASE)]
+
+      files[:] = [f for f in files if not re.match(options['exclude'], f, re.IGNORECASE)]
+      files[:] = [f for f in files if re.match(options['include'], f, re.IGNORECASE)]
+
+      for fname in files:
+        path = os.path.join(root, fname)
+        queue.put(FileEvent(path))
+
+  # proces some stuff
+  queue.put(ExitEvent())
+
+
 def process(options):
-  print options
-  print normalize_meta(get_meta('01 - Lovelorn Rhapsody.mp3', options['metadata']), [])
-  print normalize_meta(get_meta('01 - Lovelorn Rhapsody.wav', options['metadata']), [])
-  print normalize_meta(get_meta('2003 - some album/01 - Lovelorn Rhapsody.wav', options['metadata']), [])
-  print normalize_meta(get_meta('artist/2003 - some album/01 - Lovelorn Rhapsody.wav', options['metadata']), [])
-  print normalize_meta(get_meta('/some/prefix/artist/2003 - some album/01 - Lovelorn Rhapsody.wav', options['metadata']), [])
+  """Main processing loop"""
+
+  # The basic concept is simple: we set up a worker thread trying to process
+  # entries in a queue. The queue contains two types of entries, either source
+  # file entries, or a special "exit" entry.
+  # Then the different run modes (run once vs. monitoring) come down to how
+  # the queue is filled.
+  # - In 'run once' mode, the queue is filled via an os.walk() loop. The
+  #   script exits once it sees the special exit event sent when os.walk()
+  #   finishes.
+  # - In monitoring mode, the queue is filled from watchdog events, and no
+  #   exit entry is ever put into the queue.
+
+  # With the above said, let's create the queue
+  from Queue import Queue
+  queue = Queue()
+
+  # Start the worker thread
+  from threading import Thread, Condition
+  exit_cond = Condition()
+  worker = Thread(target = Worker(options, queue, exit_cond), name = 'worker')
+  worker.daemon = True
+  worker.start()
+
+  # Now fill the queue depending on run mode
+  if options['watch']:
+    monitor(queue, options)
+  else:
+    run_once(queue, options)
+
+  # Wait for worker to exit
+  try:
+    while True:
+      exit_cond.acquire()
+      exit_cond.wait(1)
+      exit_cond.release()
+
+      if not worker.is_alive():
+        break
+  except KeyboardInterrupt:
+    pass
+
 
 ##############################################################################
 # Main entry point
@@ -195,14 +444,18 @@ sub directory tree.
 """
   )
 
-  parser.add_argument('destination', metavar = 'DST', type = str, nargs = 1,
+  parser.add_argument('destination', metavar = 'DST', type = str, nargs = '?',
       help = 'Directory in which to store processed files.')
-  parser.add_argument('sources', metavar = 'SRC', type = str, nargs = '+',
+  parser.add_argument('sources', metavar = 'SRC', type = str, nargs = '*',
       help = 'Directory with source files.')
 
   parser.add_argument('-c', '--config', metavar = 'FILE', type = str,
       default = '/etc/transcode.cfg',
       help = 'Location of the configuration file. Defaults to `/etc/transcode.cfg`.')
+
+  parser.add_argument('-t', '--target-pattern', metavar = 'PATTERN', type = str,
+      default = '@(artist)/@(year) - @(album)/@(track) - @(title).mp3',
+      help = 'Pattern for how files should be structured in the target directory.')
 
   parser.add_argument('-i', '--include', metavar = 'PATTERN', type = str,
       action = 'append',
@@ -220,7 +473,7 @@ sub directory tree.
 
   args = vars(parser.parse_args())
   for k, v in args.items():
-    if v is None:
+    if not v:
       del(args[k])
 
   # Try processing config file, if it exists.
@@ -234,13 +487,14 @@ sub directory tree.
     sys.exit(1)
 
   mapping = {
-    'destination': ('directories', 'destination'),
-    'sources': ('directories', 'sources'),
+    'destination': ('filesystem', 'destination', False),
+    'sources': ('filesystem', 'sources'),
+    'target_pattern': ('filesystem', 'target_pattern', False),
     'include': ('filters', 'include'),
     'exclude': ('filters', 'exclude'),
     'metadata': ('filters', 'metadata', False),
   }
-  options = DEFAULTS
+  options = DEFAULTS.copy()
   for key, source in mapping.items():
     if parser.has_section(source[0]) and parser.has_option(source[0], source[1]):
       value = parser.get(source[0], source[1])
@@ -263,10 +517,12 @@ sub directory tree.
   # options
   options.update(args);
 
-  # Make the include/exclude patterns useful
+  # Make the various patterns useful
   import re, fnmatch
   options['include'] = r'|'.join([fnmatch.translate(x) for x in options['include']])
   options['exclude'] = r'|'.join([fnmatch.translate(x) for x in options['exclude']]) or r'$.'
+  options['target_pattern'] = options['target_pattern'].replace('@(', '%(')
+  options['target_pattern'] = options['target_pattern'].replace(')', ')s')
 
   # Let's do this thing!
   process(options)
