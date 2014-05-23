@@ -13,8 +13,8 @@ VAR_DIR="/usr/local/var/${PACKAGE}"
 UPGRADE="/tmp/${PACKAGE}.upgrade"
 PATH="${INSTALL_DIR}/sbin:/bin:/usr/bin:/usr/syno/bin" # Avoid ipkg commands
 
-CTL_FILE=/usr/local/bin/${PACKAGE}-ctl
-BIN_FILE=/usr/local/bin/${PACKAGE}
+CTL_FILE=/usr/local/bin/transcode-ctl
+BIN_FILE=/usr/local/bin/transcode
 
 SYNOUSER="/usr/syno/sbin/synouser"
 
@@ -61,7 +61,7 @@ postinst ()
     fi
 
     ln -s /var/packages/${PACKAGE}/scripts/start-stop-status ${CTL_FILE}
-    ln -s /var/packages/${PACKAGE}/target/usr/local/bin/synology-transcode ${BIN_FILE}
+    ln -s /var/packages/${PACKAGE}/target/usr/local/bin/transcode ${BIN_FILE}
 
     # Install the application in the main interface.
     if [ -d ${SYNO3APP} ]
