@@ -473,7 +473,7 @@ sub directory tree.
 
   args = vars(parser.parse_args())
   for k, v in args.items():
-    if not v:
+    if not isinstance(v, bool) and not v:
       del(args[k])
 
   # Try processing config file, if it exists.
