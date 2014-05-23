@@ -5,11 +5,13 @@
 
 # Tags we process
 KNOWN_TAGS = [
-  'artist',
-  'year',
-  'album',
-  'track',
-  'title'
+  'artist',   # (album) artist
+  'year',     # album year
+  'album',    # album title
+  'track',    # track for metadata, e.g. 04/09
+  'trackno',  # just the track number, e.g. 04
+  'title',    # track title
+  'disc',     # disc number
 ]
 
 ##############################################################################
@@ -77,11 +79,14 @@ def normalize_meta(meta):
   """Given metadata from e.g. get_meta(), normalizes it - that is, it tries to
      detect which non-ID3v2.3 items are given and to convert them to ID3v2.3
      items if possible."""
+
   if 'track' in meta:
     track = meta['track']
+    total = -1
+
     if track.find('/') < 0:
+      # No total in track field
       track = int(track)
-      total = 0
       try:
         total = int(meta['TOTALTRACKS'])
       except KeyError:
@@ -89,12 +94,18 @@ def normalize_meta(meta):
           total = int(meta['TRACKTOTAL'])
         except KeyError:
           pass
-      if total:
-        meta['track'] = '%02d/%02d' % (track, total)
-      else:
-        meta['track'] = '%02d' % track
     else:
-      meta['track'] = '%02d' % int(track)
+      # total in track field
+      s = track.split('/')
+      track = int(s[0])
+      total = int(s[1])
+
+    meta['trackno'] = '%02d' % track
+
+    if total > 0:
+      meta['track'] = '%s/%02d' % (meta['trackno'], total)
+    else:
+      meta['track'] = meta['trackno']
 
   if 'disc' not in meta:
     meta['disc'] = '1' # most often the case
@@ -454,7 +465,7 @@ sub directory tree.
       help = 'Location of the configuration file. Defaults to `/etc/transcode.cfg`.')
 
   parser.add_argument('-t', '--target-pattern', metavar = 'PATTERN', type = str,
-      default = '@(artist)/@(year) - @(album)/@(track) - @(title).mp3',
+      default = '@(artist)/@(year) - @(album)/@(trackno) - @(title).mp3',
       help = 'Pattern for how files should be structured in the target directory.')
 
   parser.add_argument('-i', '--include', metavar = 'PATTERN', type = str,
