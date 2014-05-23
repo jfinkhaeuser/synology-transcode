@@ -1,5 +1,7 @@
 #!/usr/bin/env python2.7
 
+import logging
+
 ##############################################################################
 # Global constants
 
@@ -185,13 +187,17 @@ def get_meta(fname, pattern = None):
 
 def process_file(source_full, options):
   """Actual work performed on each item in the worker queue happens here."""
+  logging.debug('Start processing "%s"...' % source_full)
+
   import os.path
   source_base, source_name = os.path.split(source_full)
   basename, ext = os.path.splitext(source_name)
 
+
   # First we gather some metadata on the source file. This is necessary amongst
   # other things to ensure we find a good target path.
   meta = normalize_meta(get_meta(source_full, options['metadata']))
+  logging.debug('Meta of "%s" is: %s' % (source_full, meta))
 
   # Next, we can establish the last components of the target file name.
   target_pattern = options['target_pattern'] % meta
@@ -207,6 +213,7 @@ def process_file(source_full, options):
   # Generate a hash of the given file. We need this to check against the
   # hashes we may just have read
   newhash = file_hash(source_full)
+  logging.debug('Hash of "%s" is: %s' % (source_full, newhash))
 
   # If the target doesn't exist, we obviously need to process, hashes or no
   # hashes.
@@ -215,25 +222,30 @@ def process_file(source_full, options):
     if source_name in hashes:
       if hashes[source_name][0] == newhash:
         # File was processed, but update to new style hash
+        logging.debug('Old hash for "%s" detected, updating.' % source_full)
         del(hashes[source_name])
         hashes[basename] = (newhash, source_full)
         write_hashes(target_base, hashes)
-        return
 
     # New hashes
     if basename in hashes:
       if hashes[basename][0] == newhash:
         # Already processed, skipping
+        logging.debug('File "%s" is unchanged.' % source_full)
         return
       elif hashes[basename][1] == source_name or hashes[basename][1] == source_full:
         # Source updated
-        pass
+        logging.debug('Updated file "%s" needs to be processed!' % source_full)
       else:
         # Exists from other source, skipping
+        logging.debug('Target exists from other source "%s", skipping' % hashes[basename][1])
         return
     else:
       # New file, processing
-      pass
+      logging.debug('New file "%s" needs to be processed!' % source_full)
+  else:
+    # Target didn't exist.
+    logging.debug('New file "%s" needs to be processed!' % source_full)
 
   # Create target directory
   import os
@@ -265,14 +277,13 @@ def process_file(source_full, options):
   import subprocess
   out = None
   try:
-    print 'Processing "%s" to "%s"...' % (source_full, target_full)
-    # print cmd
+    logging.info('Processing "%s" to "%s"...' % (source_full, target_full))
     out = subprocess.check_output(cmd, stderr = subprocess.STDOUT)
     hashes[basename] = (newhash, source_full)
     write_hashes(target_base, hashes)
-    print '-> done'
+    logging.info('Done with "%s".' % source_full)
   except subprocess.CalledProcessError as ex:
-    print '-> ERROR: ', ex
+    logging.exception('Error processing "%s"!' % source_full)
 
 
 
@@ -310,9 +321,7 @@ class Worker(object):
         process_file(event.fname, self.options)
         self.queue.task_done()
     except Exception as err:
-      import sys
-      sys.stderr.write('ERROR in worker: %s\n' % err)
-      sys.stderr.flush()
+      logging.exception('Worker died abnormally!')
 
       self.signal_end()
       return
@@ -358,8 +367,7 @@ def monitor(queue, options):
     if os.path.isdir(source):
       observer.schedule(handler, source, recursive = True)
     else:
-      import sys
-      sys.stderr.write('WARNING: skipping "%s", not a directory.\n' % source)
+      logging.warning('Skipping "%s", not a directory.\n' % source)
 
   observer.start()
 
@@ -428,6 +436,8 @@ def process(options):
   except KeyboardInterrupt:
     pass
 
+  logging.info('Exit.')
+
 
 ##############################################################################
 # Main entry point
@@ -479,6 +489,12 @@ sub directory tree.
       default = False,
       help = 'Instead of processing the source directories once and exiting, keep running and watch them for file additions and changes to process.')
 
+  parser.add_argument('--log-file', action = 'store', metavar = 'FILE', type = str,
+      default = None,
+      help = 'Optional log file location. If not specified, log output goes to the terminal.')
+  parser.add_argument('--log-level', action = 'store', metavar = 'LEVEL', type = str,
+      default = 'INFO', choices = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', ],
+      help = 'Log level, one of CRITICAL, ERROR, WARNING, INFO, DEBUG.')
 
   parser.add_argument('--version', action = 'version', version = '%(prog)s 0.2')
 
@@ -493,8 +509,8 @@ sub directory tree.
   try:
     parser.read(args['config'])
   except ConfigParser.ParsingError as err:
+    logging.exception('Could not parse config')
     import sys
-    sys.stderr.write('ERROR %s\n' % err)
     sys.exit(1)
 
   mapping = {
@@ -504,6 +520,8 @@ sub directory tree.
     'include': ('filters', 'include'),
     'exclude': ('filters', 'exclude'),
     'metadata': ('filters', 'metadata', False),
+    'log_file': ('logging', 'file', False),
+    'log_level': ('logging', 'level', False),
   }
   options = DEFAULTS.copy()
   for key, source in mapping.items():
@@ -534,6 +552,15 @@ sub directory tree.
   options['exclude'] = r'|'.join([fnmatch.translate(x) for x in options['exclude']]) or r'$.'
   options['target_pattern'] = options['target_pattern'].replace('@(', '%(')
   options['target_pattern'] = options['target_pattern'].replace(')', ')s')
+
+  # Set up logging
+  logopts = {}
+  if 'log_file' in options:
+    logopts['filename'] = options['log_file']
+  logopts['level'] = getattr(logging, options['log_level'].upper());
+  logopts['format'] = '[%(asctime)s] [%(levelname)s] [%(threadName)s] %(message)s'
+  logging.basicConfig(**logopts)
+  logging.debug('OPTIONS: %s' % options)
 
   # Let's do this thing!
   process(options)
