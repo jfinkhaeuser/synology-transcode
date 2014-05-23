@@ -214,7 +214,7 @@ def process_file(source_full, options):
       if hashes[basename][0] == newhash:
         # Already processed, skipping
         return
-      elif hashes[basename][1] == source_full:
+      elif hashes[basename][1] == source_name or hashes[basename][1] == source_full:
         # Source updated
         pass
       else:
