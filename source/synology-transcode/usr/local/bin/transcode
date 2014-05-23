@@ -446,6 +446,7 @@ def main():
     'include': ['*.flac', '*.wav'],
     'exclude': ['@eaDir'],
     'metadata': r'(?P<artist>.+)/(?P<year>[^- ]+) *- *(?P<album>.+)/(?P<track>[^- ]+) *- *(?P<title>.+)\..*',
+    'log_level': 'INFO',
   }
 
   import argparse
@@ -493,7 +494,7 @@ sub directory tree.
       default = None,
       help = 'Optional log file location. If not specified, log output goes to the terminal.')
   parser.add_argument('--log-level', action = 'store', metavar = 'LEVEL', type = str,
-      default = 'INFO', choices = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', ],
+      default = None, choices = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', ],
       help = 'Log level, one of CRITICAL, ERROR, WARNING, INFO, DEBUG.')
 
   parser.add_argument('--version', action = 'version', version = '%(prog)s 0.2')
