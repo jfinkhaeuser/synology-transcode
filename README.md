@@ -50,26 +50,18 @@ excludes = @eaDir
 - It makes sense to exclude `@eaDir`, so do that.
 
 
-Nice-To-Haves
-=============
-
-- A user interface
-- A background service
-
-I'm too lazy to build them at this stage. Send me pull requests!
-
-
 Releases
 ========
 
-Find them in the `result_spk` directory.
+Find them in the [result_spk](https://github.com/jfinkhaeuser/synology-transcode/tree/master/result_spk) directory.
 
 
 License
 =======
 
-The license is in the `LICENSE` file. It's probably bad form to name this package
-`synology-*`, but I wasn't feeling creative. Similarly, the icon is derived from
+The license is in the [LICENSE](https://github.com/jfinkhaeuser/synology-transcode/blob/master/source/synology-transcode/LICENSE)
+file. It's probably bad form to name this package `synology-*`, but I wasn't
+feeling creative. Similarly, the icon is derived from
 the [ffmpeg](http://www.ffmpeg.org/) project, because, guess what, `ffmpeg` is
 what this script uses under the hood.
 
