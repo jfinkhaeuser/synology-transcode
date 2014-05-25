@@ -112,6 +112,11 @@ def normalize_meta(meta):
   if 'disc' not in meta:
     meta['disc'] = '1' # most often the case
 
+  # Finally, make sure that known tags are all filled with defaults
+  for key in KNOWN_TAGS:
+    if key not in meta:
+      meta[key] = 'unknown'
+
   return meta
 
 
@@ -318,8 +323,13 @@ class Worker(object):
           return
 
         # Always FileEvent
-        process_file(event.fname, self.options)
-        self.queue.task_done()
+        try:
+          process_file(event.fname, self.options)
+        except Exception as ex:
+          logging.exception('Processing caused an exception, skipping "%s"!' % event.fname)
+        finally:
+          # For the queue purposes, it's done.
+          self.queue.task_done()
     except Exception as err:
       logging.exception('Worker died abnormally!')
 
