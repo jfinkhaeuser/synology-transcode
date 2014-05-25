@@ -35,11 +35,15 @@ preinst ()
       rm get-pip.py
   fi
 
+  # Create $HOME - it might not exist, and supervisor installs
+  # something there
+  mkdir -p "$HOME"
+
   # Update pip. Why not?
   pip install -U pip
 
   # Install packages
-  pip install watchdog
+  pip install watchdog supervisor
 
   exit 0
 }
